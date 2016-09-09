@@ -20,10 +20,6 @@ import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.testing.features.CollectionFeature;
 import com.google.common.collect.testing.features.CollectionSize;
 import com.google.common.collect.testing.features.SetFeature;
-
-import junit.framework.Test;
-import junit.framework.TestSuite;
-
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.AbstractSet;
@@ -39,6 +35,8 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CopyOnWriteArraySet;
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
 /**
  * Generates a test suite covering the {@link Set} implementations in the
@@ -65,6 +63,7 @@ public class TestsForSetsInJavaUtil {
     suite.addTest(testsForCopyOnWriteArraySet());
     suite.addTest(testsForUnmodifiableSet());
     suite.addTest(testsForCheckedSet());
+    suite.addTest(testsForCheckedSortedSet());
     suite.addTest(testsForAbstractSet());
     suite.addTest(testsForBadlyCollidingHashSet());
     suite.addTest(testsForConcurrentSkipListSetNatural());
@@ -110,6 +109,9 @@ public class TestsForSetsInJavaUtil {
   }
 
   protected Collection<Method> suppressForCheckedSet() {
+    return Collections.emptySet();
+  }
+  protected Collection<Method> suppressForCheckedSortedSet() {
     return Collections.emptySet();
   }
 
@@ -315,6 +317,28 @@ public class TestsForSetsInJavaUtil {
             CollectionFeature.RESTRICTS_ELEMENTS,
             CollectionSize.ANY)
         .suppressing(suppressForCheckedSet())
+        .createTestSuite();
+  }
+
+  public Test testsForCheckedSortedSet() {
+    return SortedSetTestSuiteBuilder.using(
+        new TestStringSortedSetGenerator() {
+          @Override
+          public SortedSet<String> create(String[] elements) {
+            SortedSet<String> innerSet = new TreeSet<String>();
+            Collections.addAll(innerSet, elements);
+            return Collections.checkedSortedSet(innerSet, String.class);
+          }
+        })
+        .named("checkedSortedSet/TreeSet, natural")
+        .withFeatures(
+            SetFeature.GENERAL_PURPOSE,
+            CollectionFeature.KNOWN_ORDER,
+            CollectionFeature.SERIALIZABLE,
+            CollectionFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+            CollectionFeature.RESTRICTS_ELEMENTS,
+            CollectionSize.ANY)
+        .suppressing(suppressForCheckedSortedSet())
         .createTestSuite();
   }
 

@@ -23,10 +23,6 @@ import com.google.common.collect.testing.features.CollectionFeature;
 import com.google.common.collect.testing.features.CollectionSize;
 import com.google.common.collect.testing.features.MapFeature;
 import com.google.common.collect.testing.testers.MapEntrySetTester;
-
-import junit.framework.Test;
-import junit.framework.TestSuite;
-
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.Collection;
@@ -34,6 +30,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -41,6 +38,8 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import junit.framework.Test;
+import junit.framework.TestSuite;
 
 /**
  * Generates a test suite covering the {@link Map} implementations in the
@@ -58,17 +57,30 @@ public class TestsForMapsInJavaUtil {
 
   public Test allTests() {
     TestSuite suite = new TestSuite("java.util Maps");
+    suite.addTest(testsForCheckedMap());
+    suite.addTest(testsForCheckedSortedMap());
     suite.addTest(testsForEmptyMap());
     suite.addTest(testsForSingletonMap());
     suite.addTest(testsForHashMap());
+    suite.addTest(testsForHashtable());
     suite.addTest(testsForLinkedHashMap());
     suite.addTest(testsForTreeMapNatural());
     suite.addTest(testsForTreeMapWithComparator());
+    suite.addTest(testsForUnmodifiableMap());
+    suite.addTest(testsForUnmodifiableSortedMap());
     suite.addTest(testsForEnumMap());
     suite.addTest(testsForConcurrentHashMap());
     suite.addTest(testsForConcurrentSkipListMapNatural());
     suite.addTest(testsForConcurrentSkipListMapWithComparator());
     return suite;
+  }
+
+  protected Collection<Method> suppressForCheckedMap() {
+    return Collections.emptySet();
+  }
+
+  protected Collection<Method> suppressForCheckedSortedMap() {
+    return Collections.emptySet();
   }
 
   protected Collection<Method> suppressForEmptyMap() {
@@ -80,6 +92,10 @@ public class TestsForMapsInJavaUtil {
   }
 
   protected Collection<Method> suppressForHashMap() {
+    return Collections.emptySet();
+  }
+
+  protected Collection<Method> suppressForHashtable() {
     return Collections.emptySet();
   }
 
@@ -95,6 +111,14 @@ public class TestsForMapsInJavaUtil {
     return Collections.emptySet();
   }
 
+  protected Collection<Method> suppressForUnmodifiableMap() {
+    return Collections.emptySet();
+  }
+
+  protected Collection<Method> suppressForUnmodifiableSortedMap() {
+    return Collections.emptySet();
+  }
+
   protected Collection<Method> suppressForEnumMap() {
     return Collections.emptySet();
   }
@@ -105,6 +129,55 @@ public class TestsForMapsInJavaUtil {
 
   protected Collection<Method> suppressForConcurrentSkipListMap() {
     return asList(MapEntrySetTester.getSetValueMethod());
+  }
+
+  public Test testsForCheckedMap() {
+    return MapTestSuiteBuilder.using(
+        new TestStringMapGenerator() {
+          @Override
+          protected Map<String, String> create(Entry<String, String>[] entries) {
+            Map<String, String> map = populate(new HashMap<String, String>(), entries);
+            return Collections.checkedMap(map, String.class, String.class);
+          }
+        })
+        .named("checkedMap/HashMap")
+        .withFeatures(
+            MapFeature.GENERAL_PURPOSE,
+            MapFeature.ALLOWS_NULL_KEYS,
+            MapFeature.ALLOWS_NULL_VALUES,
+            MapFeature.ALLOWS_ANY_NULL_QUERIES,
+            MapFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+            MapFeature.RESTRICTS_KEYS,
+            MapFeature.RESTRICTS_VALUES,
+            CollectionFeature.SUPPORTS_ITERATOR_REMOVE,
+            CollectionFeature.SERIALIZABLE,
+            CollectionSize.ANY)
+        .suppressing(suppressForCheckedMap())
+        .createTestSuite();
+  }
+
+  public Test testsForCheckedSortedMap() {
+    return SortedMapTestSuiteBuilder.using(
+        new TestStringSortedMapGenerator() {
+          @Override
+          protected SortedMap<String, String> create(Entry<String, String>[] entries) {
+            SortedMap<String, String> map = populate(new TreeMap<String, String>(), entries);
+            return Collections.checkedSortedMap(map, String.class, String.class);
+          }
+        })
+        .named("checkedSortedMap/TreeMap, natural")
+        .withFeatures(
+            MapFeature.GENERAL_PURPOSE,
+            MapFeature.ALLOWS_NULL_VALUES,
+            MapFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+            MapFeature.RESTRICTS_KEYS,
+            MapFeature.RESTRICTS_VALUES,
+            CollectionFeature.KNOWN_ORDER,
+            CollectionFeature.SUPPORTS_ITERATOR_REMOVE,
+            CollectionFeature.SERIALIZABLE,
+            CollectionSize.ANY)
+        .suppressing(suppressForCheckedSortedMap())
+        .createTestSuite();
   }
 
   public Test testsForEmptyMap() {
@@ -160,6 +233,30 @@ public class TestsForMapsInJavaUtil {
             CollectionSize.ANY)
         .suppressing(suppressForHashMap())
         .createTestSuite();
+  }
+
+  public Test testsForHashtable() {
+      return MapTestSuiteBuilder.using(
+          new TestStringMapGenerator() {
+            @Override
+            protected Map<String, String> create(Entry<String, String>[] entries) {
+              return populate(new Hashtable<String, String>(), entries);
+            }
+          })
+          .withFeatures(
+              MapFeature.GENERAL_PURPOSE,
+              MapFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+              MapFeature.RESTRICTS_KEYS,
+              MapFeature.SUPPORTS_REMOVE,
+              CollectionFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+              CollectionFeature.SERIALIZABLE,
+              CollectionFeature.SUPPORTS_ITERATOR_REMOVE,
+              CollectionFeature.SUPPORTS_REMOVE,
+              CollectionSize.ANY
+          )
+          .named("Hashtable")
+          .suppressing(suppressForHashtable())
+          .createTestSuite();
   }
 
   public Test testsForLinkedHashMap() {
@@ -231,6 +328,44 @@ public class TestsForMapsInJavaUtil {
             CollectionFeature.SERIALIZABLE,
             CollectionSize.ANY)
         .suppressing(suppressForTreeMapWithComparator())
+        .createTestSuite();
+  }
+
+  public Test testsForUnmodifiableMap() {
+    return MapTestSuiteBuilder.using(
+        new TestStringMapGenerator() {
+          @Override
+          protected Map<String, String> create(Entry<String, String>[] entries) {
+            return Collections.unmodifiableMap(toHashMap(entries));
+          }
+        })
+        .named("unmodifiableMap/HashMap")
+        .withFeatures(
+            MapFeature.ALLOWS_NULL_KEYS,
+            MapFeature.ALLOWS_NULL_VALUES,
+            MapFeature.ALLOWS_ANY_NULL_QUERIES,
+            CollectionFeature.SERIALIZABLE,
+            CollectionSize.ANY)
+        .suppressing(suppressForUnmodifiableMap())
+        .createTestSuite();
+  }
+
+  public Test testsForUnmodifiableSortedMap() {
+    return MapTestSuiteBuilder.using(
+        new TestStringSortedMapGenerator() {
+          @Override
+          protected SortedMap<String, String> create(Entry<String, String>[] entries) {
+            SortedMap<String, String> map = populate(new TreeMap<String, String>(), entries);
+            return Collections.unmodifiableSortedMap(map);
+          }
+        })
+        .named("unmodifiableSortedMap/TreeMap, natural")
+        .withFeatures(
+            MapFeature.ALLOWS_NULL_VALUES,
+            CollectionFeature.KNOWN_ORDER,
+            CollectionFeature.SERIALIZABLE,
+            CollectionSize.ANY)
+        .suppressing(suppressForUnmodifiableSortedMap())
         .createTestSuite();
   }
 

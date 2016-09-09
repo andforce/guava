@@ -76,7 +76,7 @@ class TrustedListenableFutureTask<V> extends AbstractFuture.TrustedFuture<V>
   }
 
   @Override
-  protected final void afterDone() {
+  protected void afterDone() {
     super.afterDone();
 
     // Free all resources associated with the running task
@@ -90,6 +90,11 @@ class TrustedListenableFutureTask<V> extends AbstractFuture.TrustedFuture<V>
     if (localTask != null) {
       localTask.interruptTask();
     }
+  }
+
+  @Override
+  public String toString() {
+    return super.toString() + " (delegate = " + task + ")";
   }
 
   @WeakOuter
@@ -115,6 +120,11 @@ class TrustedListenableFutureTask<V> extends AbstractFuture.TrustedFuture<V>
     @Override
     boolean wasInterrupted() {
       return TrustedListenableFutureTask.this.wasInterrupted();
+    }
+
+    @Override
+    public String toString() {
+      return callable.toString();
     }
   }
 }

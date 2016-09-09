@@ -16,11 +16,7 @@
 
 package com.google.common.graph;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.graph.GraphErrorMessageUtils.SELF_LOOPS_NOT_ALLOWED;
-
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.common.graph.GraphConstants.Presence;
 
 /**
  * Configurable implementation of {@link MutableGraph} that supports both directed and undirected
@@ -30,105 +26,38 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  * which is in O(d_node) where d_node is the degree of {@code node}.
  *
  * @author James Sexton
- * @author Joshua O'Madadhain
- * @author Omar Darwish
  * @param <N> Node parameter type
  */
-// TODO(b/24620028): Enable this class to support sorted nodes/edges.
-final class ConfigurableMutableGraph<N>
-    extends AbstractConfigurableGraph<N> implements MutableGraph<N> {
+final class ConfigurableMutableGraph<N> extends ForwardingGraph<N> implements MutableGraph<N> {
+  private final MutableValueGraph<N, Presence> backingValueGraph;
 
-  /**
-   * Constructs a mutable graph with the properties specified in {@code builder}.
-   */
-  ConfigurableMutableGraph(GraphBuilder<? super N> builder) {
-    super(builder);
+  /** Constructs a {@link MutableGraph} with the properties specified in {@code builder}. */
+  ConfigurableMutableGraph(AbstractGraphBuilder<? super N> builder) {
+    this.backingValueGraph = new ConfigurableMutableValueGraph<N, Presence>(builder);
   }
 
   @Override
-  @CanIgnoreReturnValue
+  protected Graph<N> delegate() {
+    return backingValueGraph;
+  }
+
+  @Override
   public boolean addNode(N node) {
-    checkNotNull(node, "node");
-    if (containsNode(node)) {
-      return false;
-    }
-    nodeConnections.put(node, newNodeConnections());
-    return true;
-  }
-
-  /**
-   * Add an edge between {@code node1} and {@code node2}; if these nodes are not already
-   * present in this graph, then add them.
-   * Return {@code false} if an edge already exists between {@code node1} and {@code node2},
-   * and in the same direction.
-   *
-   * @throws IllegalArgumentException if self-loops are not allowed, and {@code node1} is equal to
-   *     {@code node2}.
-   */
-  @Override
-  @CanIgnoreReturnValue
-  public boolean addEdge(N node1, N node2) {
-    checkNotNull(node1, "node1");
-    checkNotNull(node2, "node2");
-    checkArgument(allowsSelfLoops() || !node1.equals(node2), SELF_LOOPS_NOT_ALLOWED, node1);
-    boolean containsN1 = containsNode(node1);
-    boolean containsN2 = containsNode(node2);
-    // TODO(user): does not support parallel edges
-    if (containsN1 && containsN2 && nodeConnections.get(node1).successors().contains(node2)) {
-      return false;
-    }
-    if (!containsN1) {
-      addNode(node1);
-    }
-    NodeAdjacencies<N> connectionsN1 = nodeConnections.get(node1);
-    connectionsN1.addSuccessor(node2);
-    if (!containsN2) {
-      addNode(node2);
-    }
-    NodeAdjacencies<N> connectionsN2 = nodeConnections.get(node2);
-    connectionsN2.addPredecessor(node1);
-    return true;
+    return backingValueGraph.addNode(node);
   }
 
   @Override
-  @CanIgnoreReturnValue
+  public boolean putEdge(N nodeU, N nodeV) {
+    return backingValueGraph.putEdgeValue(nodeU, nodeV, Presence.EDGE_EXISTS) == null;
+  }
+
+  @Override
   public boolean removeNode(Object node) {
-    checkNotNull(node, "node");
-    NodeAdjacencies<N> connections = nodeConnections.get(node);
-    if (connections == null) {
-      return false;
-    }
-    for (N successor : connections.successors()) {
-      if (!node.equals(successor)) {
-        // don't remove the successor if it's the input node (=> CME); will be removed below
-        nodeConnections.get(successor).removePredecessor(node);
-      }
-    }
-    for (N predecessor : connections.predecessors()) {
-      nodeConnections.get(predecessor).removeSuccessor(node);
-    }
-    nodeConnections.remove(node);
-    return true;
+    return backingValueGraph.removeNode(node);
   }
 
   @Override
-  @CanIgnoreReturnValue
-  public boolean removeEdge(Object node1, Object node2) {
-    checkNotNull(node1, "node1");
-    checkNotNull(node2, "node2");
-    NodeAdjacencies<N> connectionsN1 = nodeConnections.get(node1);
-    if (connectionsN1 == null || !connectionsN1.successors().contains(node2)) {
-      return false;
-    }
-    NodeAdjacencies<N> connectionsN2 = nodeConnections.get(node2);
-    connectionsN1.removeSuccessor(node2);
-    connectionsN2.removePredecessor(node1);
-    return true;
-  }
-
-  private NodeAdjacencies<N> newNodeConnections() {
-    return isDirected()
-        ? DirectedNodeAdjacencies.<N>of()
-        : UndirectedNodeAdjacencies.<N>of();
+  public boolean removeEdge(Object nodeU, Object nodeV) {
+    return backingValueGraph.removeEdge(nodeU, nodeV) != null;
   }
 }

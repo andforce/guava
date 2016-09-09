@@ -18,9 +18,10 @@ package com.google.common.graph;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.graph.GraphErrorMessageUtils.ADDING_PARALLEL_EDGE;
-import static com.google.common.graph.GraphErrorMessageUtils.REUSING_EDGE;
-import static com.google.common.graph.GraphErrorMessageUtils.SELF_LOOPS_NOT_ALLOWED;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.graph.GraphConstants.PARALLEL_EDGES_NOT_ALLOWED;
+import static com.google.common.graph.GraphConstants.REUSING_EDGE;
+import static com.google.common.graph.GraphConstants.SELF_LOOPS_NOT_ALLOWED;
 
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -38,13 +39,10 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  * @param <N> Node parameter type
  * @param <E> Edge parameter type
  */
-// TODO(b/24620028): Enable this class to support sorted nodes/edges.
-final class ConfigurableMutableNetwork<N, E>
-    extends AbstractConfigurableNetwork<N, E> implements MutableNetwork<N, E> {
+final class ConfigurableMutableNetwork<N, E> extends ConfigurableNetwork<N, E>
+    implements MutableNetwork<N, E> {
 
-  /**
-   * Constructs a mutable graph with the properties specified in {@code builder}.
-   */
+  /** Constructs a mutable graph with the properties specified in {@code builder}. */
   ConfigurableMutableNetwork(NetworkBuilder<? super N, ? super E> builder) {
     super(builder);
   }
@@ -53,50 +51,68 @@ final class ConfigurableMutableNetwork<N, E>
   @CanIgnoreReturnValue
   public boolean addNode(N node) {
     checkNotNull(node, "node");
+
     if (containsNode(node)) {
       return false;
     }
-    nodeConnections.put(node, newNodeConnections());
+
+    addNodeInternal(node);
     return true;
   }
 
   /**
-   * Add nodes that are not elements of the graph, then add {@code edge} between them.
-   * Return {@code false} if {@code edge} already exists between {@code node1} and {@code node2},
-   * and in the same direction.
+   * Adds {@code node} to the graph and returns the associated {@link NetworkConnections}.
    *
-   * @throws IllegalArgumentException if an edge (other than {@code edge}) already
-   *         exists from {@code node1} to {@code node2}, and this is not a multigraph.
-   *         Also, if self-loops are not allowed, and {@code node1} is equal to {@code node2}.
+   * @throws IllegalStateException if {@code node} is already present
    */
+  @CanIgnoreReturnValue
+  private NetworkConnections<N, E> addNodeInternal(N node) {
+    NetworkConnections<N, E> connections = newConnections();
+    checkState(nodeConnections.put(node, connections) == null);
+    return connections;
+  }
+
   @Override
   @CanIgnoreReturnValue
-  public boolean addEdge(E edge, N node1, N node2) {
+  public boolean addEdge(N nodeU, N nodeV, E edge) {
+    checkNotNull(nodeU, "nodeU");
+    checkNotNull(nodeV, "nodeV");
     checkNotNull(edge, "edge");
-    checkNotNull(node1, "node1");
-    checkNotNull(node2, "node2");
-    checkArgument(allowsSelfLoops() || !node1.equals(node2), SELF_LOOPS_NOT_ALLOWED, node1);
-    boolean containsN1 = containsNode(node1);
-    boolean containsN2 = containsNode(node2);
+
     if (containsEdge(edge)) {
-      checkArgument(containsN1 && containsN2 && edgesConnecting(node1, node2).contains(edge),
-          REUSING_EDGE, edge, incidentNodes(edge), node1, node2);
+      EndpointPair<N> existingIncidentNodes = incidentNodes(edge);
+      EndpointPair<N> newIncidentNodes = EndpointPair.of(this, nodeU, nodeV);
+      checkArgument(
+          existingIncidentNodes.equals(newIncidentNodes),
+          REUSING_EDGE,
+          edge,
+          existingIncidentNodes,
+          newIncidentNodes);
       return false;
-    } else if (!allowsParallelEdges()) {
-      checkArgument(!(containsN1 && containsN2 && successors(node1).contains(node2)),
-          ADDING_PARALLEL_EDGE, node1, node2);
     }
-    if (!containsN1) {
-      addNode(node1);
+    NetworkConnections<N, E> connectionsU = nodeConnections.get(nodeU);
+    if (!allowsParallelEdges()) {
+      checkArgument(
+          !(connectionsU != null && connectionsU.successors().contains(nodeV)),
+          PARALLEL_EDGES_NOT_ALLOWED,
+          nodeU,
+          nodeV);
     }
-    NodeConnections<N, E> connectionsN1 = nodeConnections.get(node1);
-    connectionsN1.addOutEdge(edge, node2);
-    if (!containsN2) {
-      addNode(node2);
+    boolean isSelfLoop = nodeU.equals(nodeV);
+    if (!allowsSelfLoops()) {
+      checkArgument(!isSelfLoop, SELF_LOOPS_NOT_ALLOWED, nodeU);
     }
-    NodeConnections<N, E> connectionsN2 = nodeConnections.get(node2);
-    connectionsN2.addInEdge(edge, node1);
-    edgeToReferenceNode.put(edge, node1);
+
+    if (connectionsU == null) {
+      connectionsU = addNodeInternal(nodeU);
+    }
+    connectionsU.addOutEdge(edge, nodeV);
+    NetworkConnections<N, E> connectionsV = nodeConnections.get(nodeV);
+    if (connectionsV == null) {
+      connectionsV = addNodeInternal(nodeV);
+    }
+    connectionsV.addInEdge(edge, nodeU, isSelfLoop);
+    edgeToReferenceNode.put(edge, nodeU);
     return true;
   }
 
@@ -104,12 +120,15 @@ final class ConfigurableMutableNetwork<N, E>
   @CanIgnoreReturnValue
   public boolean removeNode(Object node) {
     checkNotNull(node, "node");
-    if (!containsNode(node)) {
+
+    NetworkConnections<N, E> connections = nodeConnections.get(node);
+    if (connections == null) {
       return false;
     }
+
     // Since views are returned, we need to copy the edges that will be removed.
     // Thus we avoid modifying the underlying view while iterating over it.
-    for (E edge : ImmutableList.copyOf(incidentEdges(node))) {
+    for (E edge : ImmutableList.copyOf(connections.incidentEdges())) {
       removeEdge(edge);
     }
     nodeConnections.remove(node);
@@ -120,24 +139,28 @@ final class ConfigurableMutableNetwork<N, E>
   @CanIgnoreReturnValue
   public boolean removeEdge(Object edge) {
     checkNotNull(edge, "edge");
-    N node1 = edgeToReferenceNode.get(edge);
-    if (node1 == null) {
+
+    N nodeU = edgeToReferenceNode.get(edge);
+    if (nodeU == null) {
       return false;
     }
-    N node2 = nodeConnections.get(node1).oppositeNode(edge);
-    nodeConnections.get(node1).removeOutEdge(edge);
-    nodeConnections.get(node2).removeInEdge(edge);
+
+    NetworkConnections<N, E> connectionsU = nodeConnections.get(nodeU);
+    N nodeV = connectionsU.oppositeNode(edge);
+    NetworkConnections<N, E> connectionsV = nodeConnections.get(nodeV);
+    connectionsU.removeOutEdge(edge);
+    connectionsV.removeInEdge(edge, allowsSelfLoops() && nodeU.equals(nodeV));
     edgeToReferenceNode.remove(edge);
     return true;
   }
 
-  private NodeConnections<N, E> newNodeConnections() {
+  private NetworkConnections<N, E> newConnections() {
     return isDirected()
         ? allowsParallelEdges()
-            ? DirectedMultiNodeConnections.<N, E>of()
-            : DirectedNodeConnections.<N, E>of()
+            ? DirectedMultiNetworkConnections.<N, E>of()
+            : DirectedNetworkConnections.<N, E>of()
         : allowsParallelEdges()
-            ? UndirectedMultiNodeConnections.<N, E>of()
-            : UndirectedNodeConnections.<N, E>of();
+            ? UndirectedMultiNetworkConnections.<N, E>of()
+            : UndirectedNetworkConnections.<N, E>of();
   }
 }
